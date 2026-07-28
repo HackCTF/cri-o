@@ -61,7 +61,10 @@ func (s *Server) createContainerPlatform(ctx context.Context, container *oci.Con
 			return err
 		}
 	}
-	return s.Runtime().CreateContainer(ctx, container, cgroupParent, false)
+	// HACK: pass container.Restore() instead of hardcoded false so CRIU restore
+	// is triggered when the pod has the io.kubernetes.cri-o.checkpoint-restore
+	// annotation. See AUDITORIA_FLUJO_CRIU_20260728.md for full audit.
+	return s.Runtime().CreateContainer(ctx, container, cgroupParent, container.Restore())
 }
 
 // makeAccessible changes the path permission and each parent directory to have --x--x--x

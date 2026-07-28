@@ -1,41 +1,44 @@
-# Dockerfile.build — Compilación de CRI-O con dm-thin (devicemapper)
+# Dockerfile.build — CRI-O cross-build for AlmaLinux 10 (nervous-vaughan target)
 # Uso: docker build -f hackctf/Dockerfile.build -t crio-build:hackctf .
-#
-# Este Dockerfile compila CRI-O desde el código fuente con soporte completo
-# para devicemapper (dm-thin), SIN exclude_graphdriver_devicemapper.
-# Los binarios se copian a /output/ para extracción con docker cp.
+# Luego: docker cp $(docker create crio-build:hackctf):/output/. ./output/
 
-FROM golang:1.23-bookworm
+FROM almalinux:10 AS builder
 
-# Instalar dependencias de build
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libdevmapper-dev \
-    libgpgme-dev \
-    libassuan-dev \
-    libbtrfs-dev \
-    libseccomp-dev \
-    libselinux1-dev \
-    pkg-config \
-    go-md2man \
-    iptables \
-    && rm -rf /var/lib/apt/lists/*
+# Instalar Go 1.23 y dependencias de build
+RUN dnf install -y 'dnf-command(reposync)' && \
+    dnf install -y epel-release && \
+    dnf install -y \
+        golang \
+        device-mapper-devel \
+        gpgme-devel \
+        btrfs-progs-devel \
+        libseccomp-devel \
+        libselinux-devel \
+        pkgconfig \
+        make \
+        git \
+        go-md2man \
+        iptables \
+    && dnf clean all
 
 WORKDIR /src
 
 # Copiar código fuente
 COPY . .
 
-# BUILDTAGS explícitos para dm-thin (SIN exclude_graphdriver_devicemapper)
+# BUILDTAGS: devmapper habilitado (sin exclude_graphdriver_devicemapper)
+# CGO_ENABLED=1 para linkear contra libdevmapper real
 ENV BUILDTAGS="containers_image_ostree_stub exclude_graphdriver_btrfs btrfs_noversion containers_image_openpgp seccomp selinux libdm_no_deferred_remove"
 
-# Compilar binarios CRI-O + config (sin docs para evitar error go-md2man)
+# Compilar con CGO para link estático contra libdevmapper de AlmaLinux
 RUN mkdir -p /output && \
-    make binaries crio.conf 2>&1 | tee /output/build.log
+    CGO_ENABLED=1 GOFLAGS="-trimpath -mod=vendor" make binaries 2>&1 | tee /output/build.log
 
 # Copiar binarios al directorio de salida
 RUN cp bin/crio bin/pinns /output/ && ls -la /output/
-
-# Copiar configuración generada
 RUN mkdir -p /output/etc/crio && \
     cp crio.conf /output/etc/crio/crio.conf.default
+RUN ldd /output/crio 2>&1 | tee /output/ldd.log
+
+FROM scratch
+COPY --from=builder /output/ /

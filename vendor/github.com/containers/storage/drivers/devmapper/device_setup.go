@@ -25,10 +25,6 @@ type directLVMConfig struct {
 	MetaDataSize        string
 }
 
-const (
-	lvmProfileDir = "/etc/lvm/profile"
-)
-
 var (
 	errThinpPercentMissing = errors.New("must set both `dm.thinp_percent` and `dm.thinp_metapercent` if either is specified")
 	errThinpPercentTooBig  = errors.New("combined `dm.thinp_percent` and `dm.thinp_metapercent` must not be greater than 100")
@@ -188,7 +184,8 @@ func writeLVMConfig(root string, cfg directLVMConfig) error {
 }
 
 func setupDirectLVM(cfg directLVMConfig) error {
-	binaries := []string{"pvcreate", "vgcreate", "lvcreate", "dmsetup", "lsblk", "thin_check"}
+	lvmProfileDir := "/etc/lvm/profile"
+	binaries := []string{"pvcreate", "vgcreate", "lvcreate", "lvconvert", "lvchange", "thin_check"}
 
 	for _, bin := range binaries {
 		if _, err := exec.LookPath(bin); err != nil {
@@ -238,58 +235,20 @@ func setupDirectLVM(cfg directLVMConfig) error {
 		return fmt.Errorf("%v: %w", string(out), err)
 	}
 
-	// HACK: LVM lvconvert fails in this environment with "device not cleared" error
-	// when trying to create the internal pool metadata device. Instead of lvconvert,
-	// we create the thin pool directly using dmsetup, using the LVM-managed
-	// data and metadata LVs as underlying devices. This bypasses LVM's broken
-	// thin pool creation while still using LVM for LV management.
-	// Wipe metadata LV first to ensure clean thin pool metadata.
-	thinpoolMeta := "/dev/mapper/storage-thinpoolmeta"
-	thinpoolData := "/dev/mapper/storage-thinpool"
-	metaFile, err := os.Open(thinpoolMeta)
+	out, err = exec.Command("lvconvert", "-y", "--zero", "n", "-c", "512K", "--thinpool", "storage/thinpool", "--poolmetadata", "storage/thinpoolmeta").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("opening thinpoolmeta LV: %w", err)
+		return fmt.Errorf("%v: %w", string(out), err)
 	}
-	dataFile, err := os.Open(thinpoolData)
-	if err != nil {
-		metaFile.Close()
-		return fmt.Errorf("opening thinpooldata LV: %w", err)
-	}
-	// Wipe first 4MB of metadata device for clean thin pool superblock.
-	wipeBuf := make([]byte, 4*1024*1024)
-	metaFile.Write(wipeBuf)
-	metaFile.Close()
-	// Get major:minor and size via lsblk.
-	lsblkOut, err := exec.Command("lsblk", "-o", "MAJ:MIN", "--noheadings", thinpoolMeta).Output()
-	if err != nil {
-		dataFile.Close()
-		return fmt.Errorf("lsblk for metadata device: %w", err)
-	}
-	metaMajMin := strings.TrimSpace(string(lsblkOut))
-	lsblkOut, err = exec.Command("lsblk", "-o", "MAJ:MIN", "--noheadings", thinpoolData).Output()
-	if err != nil {
-		dataFile.Close()
-		return fmt.Errorf("lsblk for data device: %w", err)
-	}
-	dataMajMin := strings.TrimSpace(string(lsblkOut))
-	lsblkOut, err = exec.Command("lsblk", "-o", "SIZE", "--noheadings", "--bytes", thinpoolData).Output()
-	if err != nil {
-		dataFile.Close()
-		return fmt.Errorf("lsblk size for data device: %w", err)
-	}
-	dataSizeStr := strings.TrimSpace(string(lsblkOut))
-	var dataSize uint64
-	fmt.Sscanf(dataSizeStr, "%d", &dataSize)
-	dataSectors := dataSize / 512
-	// dmsetup create storage-thinpool --table '<sectors> thin-pool <metaMaj:Min> <dataMaj:Min> <chunkSectors> <poolBlockSize> <flags>'
-	// chunkSectors = 512K / 512 = 1024, poolBlockSize = 32768, flags = 1 (skip_block_zeroing)
-	dmTable := fmt.Sprintf("0 %d thin-pool %s %s 1024 32768 1", dataSectors, metaMajMin, dataMajMin)
-	dmArgs := []string{"create", "storage-thinpool", "--table", dmTable}
-	if err := exec.Command("dmsetup", dmArgs...).Run(); err != nil {
-		dataFile.Close()
-		return fmt.Errorf("dmsetup create storage-thinpool failed: %w", err)
-	}
-	dataFile.Close()
 
+	profile := fmt.Sprintf("activation{\nthin_pool_autoextend_threshold=%d\nthin_pool_autoextend_percent=%d\n}", cfg.AutoExtendThreshold, cfg.AutoExtendPercent)
+	err = os.WriteFile(lvmProfileDir+"/storage-thinpool.profile", []byte(profile), 0o600)
+	if err != nil {
+		return fmt.Errorf("writing storage thinp autoextend profile: %w", err)
+	}
+
+	out, err = exec.Command("lvchange", "--metadataprofile", "storage-thinpool", "storage/thinpool").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%s: %w", string(out), err)
+	}
 	return nil
 }
