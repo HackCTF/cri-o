@@ -1,0 +1,9 @@
+go build  -trimpath  -ldflags '-s -w -X github.com/cri-o/cri-o/internal/version.buildDate='2026-07-22T19:29:16Z' ' -tags "containers_image_ostree_stub exclude_graphdriver_btrfs btrfs_noversion containers_image_openpgp seccomp selinux libdm_no_deferred_remove" -o bin/crio github.com/cri-o/cri-o/cmd/crio
+make -C pinns
+make[1]: Entering directory '/src/pinns'
+cc -o ../bin/pinns src/pinns.o src/sysctl.o -std=c99 -Os -Wall -Werror -Wextra -static  
+strip -s ../bin/pinns
+make[1]: Leaving directory '/src/pinns'
+./bin/crio -d "" --config=""  config > crio.conf
+time="2026-07-22 19:31:25.437194553Z" level=info msg="Starting CRI-O, version: 1.29.13, git: unknown(clean)"
+level=info msg="Using default capabilities: CAP_CHOWN, CAP_DAC_OVERRIDE, CAP_FSETID, CAP_FOWNER, CAP_SETGID, CAP_SETUID, CAP_SETPCAP, CAP_NET_BIND_SERVICE, CAP_KILL"

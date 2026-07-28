@@ -1,0 +1,41 @@
+# Dockerfile.build — Compilación de CRI-O con dm-thin (devicemapper)
+# Uso: docker build -f hackctf/Dockerfile.build -t crio-build:hackctf .
+#
+# Este Dockerfile compila CRI-O desde el código fuente con soporte completo
+# para devicemapper (dm-thin), SIN exclude_graphdriver_devicemapper.
+# Los binarios se copian a /output/ para extracción con docker cp.
+
+FROM golang:1.23-bookworm
+
+# Instalar dependencias de build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libdevmapper-dev \
+    libgpgme-dev \
+    libassuan-dev \
+    libbtrfs-dev \
+    libseccomp-dev \
+    libselinux1-dev \
+    pkg-config \
+    go-md2man \
+    iptables \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+# Copiar código fuente
+COPY . .
+
+# BUILDTAGS explícitos para dm-thin (SIN exclude_graphdriver_devicemapper)
+ENV BUILDTAGS="containers_image_ostree_stub exclude_graphdriver_btrfs btrfs_noversion containers_image_openpgp seccomp selinux libdm_no_deferred_remove"
+
+# Compilar binarios CRI-O + config (sin docs para evitar error go-md2man)
+RUN mkdir -p /output && \
+    make binaries crio.conf 2>&1 | tee /output/build.log
+
+# Copiar binarios al directorio de salida
+RUN cp bin/crio bin/pinns /output/ && ls -la /output/
+
+# Copiar configuración generada
+RUN mkdir -p /output/etc/crio && \
+    cp crio.conf /output/etc/crio/crio.conf.default

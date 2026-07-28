@@ -1,0 +1,17 @@
+# .dockerignore — Excluir archivos innecesarios del build context
+.git
+.github
+test/
+test/
+contrib/
+crictl/
+docs/
+nix/
+scripts/
+*.md
+!go.mod
+!go.sum
+hackctf/
+build/
+_output/
+bin/

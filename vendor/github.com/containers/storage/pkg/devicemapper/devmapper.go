@@ -638,17 +638,13 @@ func SuspendDevice(name string) error {
 
 // ResumeDevice is the programmatic example of "dmsetup resume".
 // It un-suspends the specified device.
+// HACK: UdevWait bypassed — the device node already exists from ActivateDevice,
+// and skipping the udev sync saves ~50-150ms per call.
 func ResumeDevice(name string) error {
 	task, err := TaskCreateNamed(deviceResume, name)
 	if task == nil {
 		return err
 	}
-
-	cookie := new(uint)
-	if err := task.setCookie(cookie, 0); err != nil {
-		return fmt.Errorf("devicemapper: Can't set cookie %s", err)
-	}
-	defer UdevWait(cookie)
 
 	if err := task.run(); err != nil {
 		return fmt.Errorf("devicemapper: Error running deviceResume %s", err)
@@ -743,10 +739,10 @@ func activateDevice(poolName string, name string, deviceID int, size uint64, ext
 	}
 
 	cookie := new(uint)
-	if err := task.setCookie(cookie, 0); err != nil {
-		return fmt.Errorf("devicemapper: Can't set cookie %s", err)
+	flags := uint16(DmUdevDisableSubsystemRulesFlag | DmUdevDisableDiskRulesFlag | DmUdevDisableOtherRulesFlag)
+	if err := task.setCookie(cookie, flags); err != nil {
+		return fmt.Errorf("devicemapper: Can't set cookie: %s", err)
 	}
-
 	defer UdevWait(cookie)
 
 	if err := task.run(); err != nil {

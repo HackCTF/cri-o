@@ -1,0 +1,52 @@
+# Dockerfile.runtime — Imagen de runtime CRI-O con dm-thin
+# Uso: docker build -f hackctf/Dockerfile.runtime -t harbor.k8s.local/library/cri-o:hackctf-dm-thin-v1 .
+#
+# Imagen final que contiene CRI-O compilado con soporte dm-thin,
+# listo para desplegar en los workers del cluster.
+
+FROM registry.access.redhat.com/ubi9/ubi:latest AS runtime
+
+# Instalar dependencias runtime de CRI-O
+RUN dnf install -y --allowerasing \
+    libdevmapper \
+    containers-common \
+    conmon \
+    crun \
+    containernetworking-plugins \
+    atomic-registries \
+    skopeo \
+    && dnf clean all
+
+# Copiar binarios CRI-O compilados (solo crio + pinns)
+COPY hackctf/output/crio hackctf/output/pinns /usr/local/bin/
+
+# Copiar configuración por defecto
+RUN mkdir -p /etc/crio
+COPY hackctf/output/etc/crio/crio.conf.default /etc/crio/crio.conf
+
+# Crear directorios necesarios
+RUN mkdir -p /var/lib/containers/storage \
+             /var/run/containers/storage \
+             /run/crio \
+             /etc/containers/registries.conf.d
+
+# Configuración de storage para dm-thin
+RUN cat > /etc/containers/storage.conf << 'EOF'
+[storage]
+driver = "devicemapper"
+
+[storage.options.devicemapper]
+poolname = "crio-dm-pool"
+size = ""
+thinpoolvolumename = ""
+EOF
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD crio status || exit 1
+
+# Puerto CRI-O (solo para debugging — en producción usa unix socket)
+# EXPOSE 9080 9081
+
+ENTRYPOINT ["/usr/local/bin/crio"]
+CMD ["--log-level=info"]
