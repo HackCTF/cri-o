@@ -181,6 +181,30 @@ func (r *runtimeOCI) CreateContainer(ctx context.Context, c *Container, cgroupPa
 				),
 			)
 		}
+		// Skip OCI runtime and kubelet mounts that change between checkpoint
+		// and restore (the runtime already sets up proc/sys/dev before CRIU,
+		// and kubelet-injected bind mounts have different pod UID paths).
+		skipMnts := []string{
+			"/proc",
+			"/proc/sys",
+			"/proc/sysrq-trigger",
+			"/sys",
+			"/sys/devices/virtual",
+			"/sys/fs/cgroup",
+			"/dev",
+			"/dev/pts",
+			"/dev/shm",
+			"/dev/mqueue",
+			"/dev/termination-log",
+			"/etc/hosts",
+			"/etc/resolv.conf",
+			"/etc/hostname",
+			"/var/run/secrets/kubernetes.io/serviceaccount",
+			"/run/secrets/kubernetes.io/serviceaccount",
+		}
+		for _, mnt := range skipMnts {
+			args = append(args, "--runtime-opt", "--skip-mnt="+mnt)
+		}
 	}
 
 	log.WithFields(ctx, logrus.Fields{

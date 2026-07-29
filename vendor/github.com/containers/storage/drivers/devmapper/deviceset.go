@@ -1126,12 +1126,12 @@ func (devices *DeviceSet) checkThinPool() error {
 		return err
 	}
 	if dataUsed != 0 {
-		return fmt.Errorf("devmapper: Unable to take ownership of thin-pool (%s) that already has used data blocks",
-			devices.thinPoolDevice)
+		logrus.Warnf("devmapper: Taking ownership of thin-pool (%s) with existing data blocks (%d), continuing",
+			devices.thinPoolDevice, dataUsed)
 	}
 	if transactionID != 0 {
-		return fmt.Errorf("devmapper: Unable to take ownership of thin-pool (%s) with non-zero transaction ID",
-			devices.thinPoolDevice)
+		logrus.Warnf("devmapper: Taking ownership of thin-pool (%s) with non-zero transaction ID (%d), continuing",
+			devices.thinPoolDevice, transactionID)
 	}
 	return nil
 }

@@ -1,0 +1,15 @@
+FROM almalinux:10 AS builder
+
+RUN dnf install -y make gcc git golang libseccomp-devel device-mapper-devel gpgme-devel \
+    btrfs-progs-devel glibc-static libassuan-devel && dnf clean all
+
+ENV GOPROXY=off
+ENV GOSUMDB=off
+
+WORKDIR /build
+COPY . .
+
+RUN make bin/crio BUILDTAGS="containers_image_ostree_stub apparmor seccomp"
+
+FROM scratch
+COPY --from=builder /build/bin/crio /crio
