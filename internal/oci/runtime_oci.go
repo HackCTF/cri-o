@@ -181,7 +181,6 @@ func (r *runtimeOCI) CreateContainer(ctx context.Context, c *Container, cgroupPa
 				),
 			)
 		}
-		log.Debugf(ctx, "Applying %d skip-mnt paths for restore", len(skipMnts))
 		// Skip OCI runtime and kubelet mounts that change between checkpoint
 		// and restore (the runtime already sets up proc/sys/dev before CRIU,
 		// and kubelet-injected bind mounts have different pod UID paths).
