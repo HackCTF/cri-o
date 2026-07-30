@@ -282,6 +282,14 @@ func (s *Server) CRImportCheckpoint(
 		if ignoreMounts[m.Destination] {
 			continue
 		}
+		// Skip /run/secrets/* paths - these are kubernetes.io/serviceaccount
+		// bind mounts that may not exist in the target pod namespace
+		// (e.g. when automountServiceAccountToken: false).
+		if strings.HasPrefix(m.Destination, "/run/secrets/") ||
+			strings.HasPrefix(m.Destination, "/var/run/secrets/") {
+			log.Debugf(ctx, "Skipping optional secret mount %s during restore", m.Destination)
+			continue
+		}
 		mount := &types.Mount{
 			ContainerPath: m.Destination,
 		}
