@@ -13,6 +13,8 @@ import (
 	types "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
+const defaultCheckpointTimeout = 180
+
 // CheckpointContainer checkpoints a container
 func (s *Server) CheckpointContainer(ctx context.Context, req *types.CheckpointContainerRequest) (*types.CheckpointContainerResponse, error) {
 	if !s.config.RuntimeConfig.CheckpointRestore() {
@@ -24,14 +26,16 @@ func (s *Server) CheckpointContainer(ctx context.Context, req *types.CheckpointC
 		return nil, status.Errorf(codes.NotFound, "could not find container %q: %v", req.ContainerId, err)
 	}
 
-	// If req.Timeout > 0, apply it as a context deadline.
-	// This overrides the gRPC client's default deadline (which may be too short
-	// for large CRIU dumps) with the user-specified timeout.
-	if req.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(req.Timeout)*time.Second)
-		defer cancel()
+	// Apply timeout from request, or use default if not set.
+	// This ensures the gRPC handler has a bounded deadline even when the client
+	// doesn't specify one (e.g. crictl checkpoint without --timeout).
+	checkpointTimeout := req.Timeout
+	if checkpointTimeout == 0 {
+		checkpointTimeout = defaultCheckpointTimeout
 	}
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, time.Duration(checkpointTimeout)*time.Second)
+	defer cancel()
 
 	log.Infof(ctx, "Checkpointing container: %s", req.ContainerId)
 	config := &metadata.ContainerConfig{
