@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"time"
 
 	metadata "github.com/checkpoint-restore/checkpointctl/lib"
 	"github.com/cri-o/cri-o/internal/lib"
@@ -23,6 +24,15 @@ func (s *Server) CheckpointContainer(ctx context.Context, req *types.CheckpointC
 		return nil, status.Errorf(codes.NotFound, "could not find container %q: %v", req.ContainerId, err)
 	}
 
+	// If req.Timeout > 0, apply it as a context deadline.
+	// This overrides the gRPC client's default deadline (which may be too short
+	// for large CRIU dumps) with the user-specified timeout.
+	if req.Timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(req.Timeout)*time.Second)
+		defer cancel()
+	}
+
 	log.Infof(ctx, "Checkpointing container: %s", req.ContainerId)
 	config := &metadata.ContainerConfig{
 		ID: req.ContainerId,
@@ -32,6 +42,7 @@ func (s *Server) CheckpointContainer(ctx context.Context, req *types.CheckpointC
 		// For the forensic container checkpointing use case we
 		// keep the container running after checkpointing it.
 		KeepRunning: true,
+		Timeout:     req.Timeout,
 	}
 
 	_, err = s.ContainerServer.ContainerCheckpoint(ctx, config, opts)

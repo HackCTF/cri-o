@@ -1464,6 +1464,39 @@ func (r *runtimeOCI) defaultRuntimeArgs() []string {
 	return args
 }
 
+// runtimeCmdContext executes a command with args, respecting context deadline,
+// and returns its output as a string along with an error, if any.
+func (r *runtimeOCI) runtimeCmdContext(ctx context.Context, args ...string) (string, error) {
+	runtimeArgs := append(r.defaultRuntimeArgs(), args...)
+	cmd := cmdrunner.CommandContext(ctx, r.handler.RuntimePath, runtimeArgs...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if v, found := os.LookupEnv("XDG_RUNTIME_DIR"); found {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("XDG_RUNTIME_DIR=%s", v))
+	}
+
+	err := cmd.Run()
+	if err != nil {
+		stdErrStr := stderr.String()
+		switch {
+		// crun, for most of the commands.
+		case strings.Contains(stdErrStr, "no such process"):
+			fallthrough //nolint:gocritic
+		// runc, for most of the commands.
+		case strings.Contains(stdErrStr, "container not running"):
+			fallthrough //nolint:gocritic
+		// runc, on a rare occasion.
+		case strings.Contains(stdErrStr, "invalid process"):
+			err = ErrNotFound
+		}
+		return "", fmt.Errorf("`%v %v` failed: %v %v: %w", r.handler.RuntimePath, strings.Join(runtimeArgs, " "), stderr.String(), stdout.String(), err)
+	}
+
+	return stdout.String(), nil
+}
+
 // CheckpointContainer checkpoints a container.
 func (r *runtimeOCI) CheckpointContainer(ctx context.Context, c *Container, specgen *rspec.Spec, leaveRunning bool) error {
 	c.opLock.Lock()
@@ -1508,7 +1541,7 @@ func (r *runtimeOCI) CheckpointContainer(ctx context.Context, c *Container, spec
 
 	args = append(args, c.ID())
 
-	_, err := r.runtimeCmd(args...)
+	_, err := r.runtimeCmdContext(ctx, args...)
 	if err != nil {
 		return fmt.Errorf("running %q %q failed: %w", runtimePath, args, err)
 	}

@@ -29,6 +29,9 @@ type ContainerCheckpointOptions struct {
 	// TargetFile tells the API to read (or write) the checkpoint image
 	// from (or to) the filename set in TargetFile
 	TargetFile string
+	// Timeout specifies an optional timeout in seconds for the checkpoint operation.
+	// Zero means no explicit timeout (gRPC context deadline still applies).
+	Timeout int64
 }
 
 // ContainerCheckpoint checkpoints a running container.
