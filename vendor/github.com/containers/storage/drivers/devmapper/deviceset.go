@@ -342,7 +342,7 @@ func (devices *DeviceSet) writeMetaFile(jsonData []byte, filePath string) error 
 	if n < len(jsonData) {
 		return io.ErrShortWrite
 	}
-	if err := tmpFile.Sync(); err != nil {
+	if err := unix.Fdatasync(int(tmpFile.Fd())); err != nil {
 		return fmt.Errorf("devmapper: Error syncing metadata file %s: %s", tmpFile.Name(), err)
 	}
 	if err := tmpFile.Close(); err != nil {
@@ -350,6 +350,13 @@ func (devices *DeviceSet) writeMetaFile(jsonData []byte, filePath string) error 
 	}
 	if err := os.Rename(tmpFile.Name(), filePath); err != nil {
 		return fmt.Errorf("devmapper: Error committing metadata file %s: %s", tmpFile.Name(), err)
+	}
+	dir, err := os.Open(devices.metadataDir())
+	if err == nil {
+		if derr := dir.Sync(); derr != nil {
+			logrus.Warnf("devmapper: Error syncing metadata directory %s: %v", devices.metadataDir(), derr)
+		}
+		dir.Close()
 	}
 
 	return nil
